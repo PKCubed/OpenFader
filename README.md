@@ -3,6 +3,8 @@ A project to modularize motorized faders with I2C control based on the ATtiny161
 
 Currently very much in development.
 
+https://github.com/user-attachments/assets/ef170d1e-9a4b-43a3-9d26-493bcd82ac08
+
 ## I2C Registers:
 
 
