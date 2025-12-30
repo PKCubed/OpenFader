@@ -7,11 +7,9 @@ https://github.com/user-attachments/assets/ef170d1e-9a4b-43a3-9d26-493bcd82ac08
 
 ![PXL_20251116_050939562 RAW-01 MP COVER](https://github.com/user-attachments/assets/bc069402-9d71-43b5-a8d1-c1ee2bd488f5)
 
+I've currently only designed a version for the Behringer MF60T, which is one of the cheapest motorized fader on the market. For other faders with different pin locations, the circuit is identical, but the locations of the pads will have to be redesigned. For testing, you can always use wires to attach the appropriate PCB pads to the fader.
 
 ## I2C Registers:
-
-
-
 
 - `0x00` Potentiometer Position (8 bit, Read/Write)
 
