@@ -5,6 +5,9 @@ Currently very much in development.
 
 https://github.com/user-attachments/assets/ef170d1e-9a4b-43a3-9d26-493bcd82ac08
 
+![PXL_20251116_050939562 RAW-01 MP COVER](https://github.com/user-attachments/assets/bc069402-9d71-43b5-a8d1-c1ee2bd488f5)
+
+
 ## I2C Registers:
 
 
