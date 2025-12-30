@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "TLV740P")(type "KiCad")(uri "${KIPRJMOD}/Imported Symbols/TLV74033PDBVR/KiCADv6/2025-11-01_23-48-31.kicad_sym")(options "")(descr ""))
+)
