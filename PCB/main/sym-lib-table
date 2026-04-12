@@ -2,4 +2,5 @@
   (version 7)
   (lib (name "TLV740P")(type "KiCad")(uri "${KIPRJMOD}/Imported Symbols/TLV74033PDBVR/KiCADv6/2025-11-01_23-48-31.kicad_sym")(options "")(descr ""))
   (lib (name "L9110")(type "Legacy")(uri "${KIPRJMOD}/libs/L9110.lib")(options "")(descr ""))
+  (lib (name "2026-04-12_02-59-10")(type "KiCad")(uri "${KIPRJMOD}/libs/2026-04-12_02-59-10.kicad_sym")(options "")(descr ""))
 )
