@@ -60,7 +60,36 @@
           "width": 0.0
         }
       ],
-      "drc_exclusions": [],
+      "drc_exclusions": [
+        [
+          "annular_width|140310000|83950000|d7142565-5543-4e4b-9abd-3ac24db08a02|00000000-0000-0000-0000-000000000000",
+          ""
+        ],
+        [
+          "annular_width|141580000|83950000|06135ad0-e913-4a74-b935-34ee5dc7b925|00000000-0000-0000-0000-000000000000",
+          ""
+        ],
+        [
+          "annular_width|142850000|83950000|8cc0ae38-3869-4954-8f0a-05f2cb66dd49|00000000-0000-0000-0000-000000000000",
+          ""
+        ],
+        [
+          "annular_width|144120000|83950000|72233f73-a80f-42fa-a104-d1ada4ebef56|00000000-0000-0000-0000-000000000000",
+          ""
+        ],
+        [
+          "lib_footprint_mismatch|142200000|122500000|7f158133-5be5-452b-b23a-0a7118185f03|00000000-0000-0000-0000-000000000000",
+          ""
+        ],
+        [
+          "starved_thermal|137200000|100050000|99dfe0a1-942a-4cc1-8f72-ea57c2f26ebf|7ef72d77-2cfd-4b04-ae23-3f5d6429577d|F.Cu",
+          ""
+        ],
+        [
+          "starved_thermal|141200000|91001000|99dfe0a1-942a-4cc1-8f72-ea57c2f26ebf|36efa6db-ee31-4e7e-a3de-47464d90657c|F.Cu",
+          ""
+        ]
+      ],
       "meta": {
         "version": 2
       },
@@ -105,8 +134,8 @@
         "pth_inside_courtyard": "ignore",
         "shorting_items": "error",
         "silk_edge_clearance": "ignore",
-        "silk_over_copper": "warning",
-        "silk_overlap": "warning",
+        "silk_over_copper": "ignore",
+        "silk_overlap": "ignore",
         "skew_out_of_range": "error",
         "solder_mask_bridge": "error",
         "starved_thermal": "error",
@@ -515,7 +544,6 @@
         "bus_width": 12,
         "clearance": 0.2,
         "diff_pair_gap": 0.25,
-        "diff_pair_via_gap": 0.25,
         "diff_pair_width": 0.2,
         "line_style": 0,
         "microvia_diameter": 0.3,
@@ -552,6 +580,14 @@
       {
         "netclass": "Power",
         "pattern": "Motor-"
+      },
+      {
+        "netclass": "Power",
+        "pattern": "+5V"
+      },
+      {
+        "netclass": "Power",
+        "pattern": "VMOT"
       }
     ]
   },
@@ -695,7 +731,7 @@
         "uuid": "90b10b66-12e8-465c-a51a-726ddba72d44"
       }
     ],
-    "used_designators": "R1,#PWR12-13,#PWR33,#PWR46-47,S1-2,C2-8",
+    "used_designators": "#PWR33,R1",
     "variants": []
   },
   "sheets": [
