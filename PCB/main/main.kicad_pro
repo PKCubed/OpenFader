@@ -78,11 +78,7 @@
           ""
         ],
         [
-          "lib_footprint_mismatch|142200000|122500000|7f158133-5be5-452b-b23a-0a7118185f03|00000000-0000-0000-0000-000000000000",
-          ""
-        ],
-        [
-          "starved_thermal|137200000|100050000|99dfe0a1-942a-4cc1-8f72-ea57c2f26ebf|7ef72d77-2cfd-4b04-ae23-3f5d6429577d|F.Cu",
+          "starved_thermal|137200000|100050000|99dfe0a1-942a-4cc1-8f72-ea57c2f26ebf|e821cea2-0b9a-42b3-8082-4065bb14d6ab|F.Cu",
           ""
         ],
         [
@@ -120,7 +116,7 @@
         "items_not_allowed": "error",
         "length_out_of_range": "error",
         "lib_footprint_issues": "warning",
-        "lib_footprint_mismatch": "warning",
+        "lib_footprint_mismatch": "ignore",
         "malformed_courtyard": "error",
         "microvia_drill_out_of_range": "error",
         "mirrored_text_on_front_layer": "warning",
@@ -141,7 +137,7 @@
         "starved_thermal": "error",
         "text_height": "ignore",
         "text_on_edge_cuts": "error",
-        "text_thickness": "warning",
+        "text_thickness": "ignore",
         "through_hole_pad_without_hole": "error",
         "too_many_vias": "error",
         "track_angle": "error",
@@ -731,7 +727,7 @@
         "uuid": "90b10b66-12e8-465c-a51a-726ddba72d44"
       }
     ],
-    "used_designators": "#PWR33,R1",
+    "used_designators": "J3",
     "variants": []
   },
   "sheets": [
