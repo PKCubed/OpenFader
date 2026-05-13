@@ -15,7 +15,7 @@ When the controller needs data from a fader (position, touch-state, etc.), it wi
 
 ## Data Structure
 
-| Data Byte 0 | Description         |
+| Data Byte 0 <br> (Control) | Description         |
 | ----------- | ------------------- |
 | `0x00`      | Read Position       |
 | `0x01`      | Read Error          |
@@ -23,3 +23,12 @@ When the controller needs data from a fader (position, touch-state, etc.), it wi
 | `0x10`      | Write Position      |
 | `0x11`      | Write LED Color     |
 | `0x12`      | Write Configuration |
+
+## Timing Statistics
+Inherent to the method of addressed data transfer used by OpenFader, things are rather inefficient. Each fader in the chain has to buffer the data before it gets to the fader at the end. This causes data transactions to take many uart clock cycles to be completed.
+
+For a 32 fader system assuming a 6 byte transaction <!-- (`Addr0`, `Addr1`, `Control`, `Data1`, `Data2`, `End`) -->running at 115200 baud, a round-trip data transmission to the last fader in the chain would take ___ clock cycles.
+
+A single byte as a UART transaction takes 12 bits. Projecting to a 6 byte transaction, this would take 72 uart clock cycles.
+
+Allowing for a 12 uart cycle processing period, it would take 84*32=2688 uart clock cycles to get the data to the last fader and let the fader process the data. 2688 clock cycles at 115200 Hz gives a transmit time of ~23ms.
