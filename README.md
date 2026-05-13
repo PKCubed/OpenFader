@@ -1,45 +1,13 @@
 # OpenFader
-A project to modularize motorized faders with I2C control based on the ATtiny1614.
+A project to modularize motorized faders with serial daisy chaining.
 
-Currently very much in development.
+This board gets soldered onto the back of a motorized fader, and handles the control system aspect of the motorized faders. This board will handle PID control, with different modes and configuration options.
+Each board has two UART connections (TX and RX). One UART connection is the upstream connection and connects to the previous fader or to the controller. The other UART connection is the downstream connection and connects to the following fader. When data flows from the controller to the first fader, the controller sends an integer fader address followed by data for that specific fader address. If this integer is not zero, the current fader modifies this address by subtracting 1, then sends the data on to the next fader. This process continuous until the address is zero. At this point, the receiving fader knows that the data is for itself, and it processes the data. Returning data from faders follows the same process but is reversed. Data requested from the fader comes after an address of zero. Each following fader in the path of the data increments this address on its way to the cotnroller. When this address and data gets to the controller, the address will have been incremented such that the controller knows exactly which fader sent this data.
 
 https://github.com/user-attachments/assets/ef170d1e-9a4b-43a3-9d26-493bcd82ac08
 
 ![PXL_20251116_050939562 RAW-01 MP COVER](https://github.com/user-attachments/assets/bc069402-9d71-43b5-a8d1-c1ee2bd488f5)
 
-I've currently only designed a version for the Behringer MF60T, which is one of the cheapest motorized fader on the market. For other faders with different pin locations, the circuit is identical, but the locations of the pads will have to be redesigned. For testing, you can always use wires to attach the appropriate PCB pads to the fader.
+I've currently only designed a version for the Behringer MF60T and MF100T, which are some of the most economical motorized faders on the market. For other faders with different pin locations, the circuit is identical, but the locations of the pads will have to be redesigned. For testing, you can always use wires to attach the appropriate PCB pads to the fader.
 
-## I2C Registers:
-
-- `0x00` Potentiometer Position (8 bit, Read/Write)
-
-  Register 0x00, the fader position, can always be read to get the fader's current position. Whenever the position is written, the fader moves to the position. Once it has reached the position, the motor turns off. If   the fader cannot reach the position, either it takes too long or it detects movement in the other direction, the motor turns off.
-- `0x01` Mode/Settings (8 bit, Read/Write)
-  <table>
-    <tr>
-      <td>7</td>
-      <td>6</td>
-      <td>5</td>
-      <td>4</td>
-      <td>3</td>
-      <td>2</td>
-      <td>1</td>
-      <td>0</td>
-    </tr>
-    <tr>
-      <td colspan="3">Setpoint Deadzone</td>
-      <td colspan="3">Motor Speed / Strength</td>
-      <td colspan="1">Continuous Mode</td>
-      <td colspan="1">Proportional Mode</td>
-    </tr>
-  </table>
-  When bit 0 is high, as the fader approaches the setpoint, it slows down.  
-  When bit 1 is low, normal operation as described below. When bit 1 is high, the motor is always trying to get back to the setpoint.
-- `0x02` Capacitive Touch Reading (8 bit, Read only, Not yet implemented)
-
-
-
-
-
-
-
+A PCB is on the way, and when it gets to me I can start developing firmware.
