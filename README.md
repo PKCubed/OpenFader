@@ -12,4 +12,4 @@ https://github.com/user-attachments/assets/ef170d1e-9a4b-43a3-9d26-493bcd82ac08
 
 I've currently only designed a version for the Behringer MF60T and MF100T, which are some of the most economical motorized faders on the market. For other faders with different pin locations, the circuit is identical, but the locations of the pads will have to be redesigned. For testing, you can always use wires to attach the appropriate PCB pads to the fader.
 
-A PCB is on the way, and when it gets to me I can start developing firmware.
+This project is supported by [PCBWay](https://www.pcbway.com/)! I'd like to thank them for sponsoring this project and providing me free prototyping boards. The quality of my initial order is fantastic! They are a great option for PCB manufacturing and component assembly.
