@@ -1,0 +1,135 @@
+#include "py32f0xx_hal.h"
+#include "py32f0xx_bsp_printf.h"
+#include "ws2812.h"
+#include "SEGGER_RTT.h"
+
+void APP_ErrorHandler(void);
+
+ADC_HandleTypeDef AdcHandle;
+
+// Basic system clock configuration function
+static void APP_SystemClockConfig(void)
+{
+  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+
+  // HSI Config 24MHz
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+  RCC_OscInitStruct.HSIDiv = RCC_HSI_DIV1;
+  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_24MHz;
+  RCC_OscInitStruct.HSEState = RCC_HSE_OFF;
+  RCC_OscInitStruct.LSIState = RCC_LSI_OFF;
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+  {
+    APP_ErrorHandler();
+  }
+
+  // SysClk Config
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_PCLK1;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSI;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
+  {
+    APP_ErrorHandler();
+  }
+}
+
+// Initialize ADC on PA4 (Channel 4)
+static void APP_ADC_Init(void)
+{
+  __HAL_RCC_ADC_FORCE_RESET();
+  __HAL_RCC_ADC_RELEASE_RESET();
+  __HAL_RCC_ADC_CLK_ENABLE();
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+  GPIO_InitStruct.Pin = GPIO_PIN_4;
+  GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  AdcHandle.Instance = ADC1;
+  if (HAL_ADCEx_Calibration_Start(&AdcHandle) != HAL_OK)
+  {
+    APP_ErrorHandler();
+  }
+  
+  AdcHandle.Init.ClockPrescaler        = ADC_CLOCK_SYNC_PCLK_DIV1;
+  AdcHandle.Init.Resolution            = ADC_RESOLUTION_12B;
+  AdcHandle.Init.DataAlign             = ADC_DATAALIGN_RIGHT;
+  AdcHandle.Init.ScanConvMode          = ADC_SCAN_DIRECTION_FORWARD;
+  AdcHandle.Init.EOCSelection          = ADC_EOC_SINGLE_CONV;
+  AdcHandle.Init.LowPowerAutoWait      = DISABLE;
+  AdcHandle.Init.ContinuousConvMode    = DISABLE;
+  AdcHandle.Init.DiscontinuousConvMode = DISABLE;
+  AdcHandle.Init.ExternalTrigConv      = ADC_SOFTWARE_START;
+  AdcHandle.Init.ExternalTrigConvEdge  = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  AdcHandle.Init.DMAContinuousRequests = DISABLE;
+  AdcHandle.Init.Overrun               = ADC_OVR_DATA_OVERWRITTEN;
+  AdcHandle.Init.SamplingTimeCommon    = ADC_SAMPLETIME_239CYCLES_5;
+  if (HAL_ADC_Init(&AdcHandle) != HAL_OK)
+  {
+    APP_ErrorHandler();
+  }
+
+  ADC_ChannelConfTypeDef sConfig = {0};
+  sConfig.Rank         = ADC_RANK_CHANNEL_NUMBER;
+  sConfig.Channel      = ADC_CHANNEL_4;
+  if (HAL_ADC_ConfigChannel(&AdcHandle, &sConfig) != HAL_OK)
+  {
+    APP_ErrorHandler();
+  }
+}
+
+// Override the weak _write function so printf outputs to SEGGER RTT
+int _write(int file, char *ptr, int len)
+{
+  (void)file;
+  SEGGER_RTT_Write(0, ptr, len);
+  return len;
+}
+
+int main(void)
+{
+  HAL_Init();
+  APP_SystemClockConfig();
+  
+  SEGGER_RTT_Init();
+  printf("PY32F003 ADC Test (via RTT)\r\nSystem Clock: %ld\r\n", SystemCoreClock);
+
+  APP_ADC_Init();
+  
+  while (1)
+  {
+    // Start ADC conversion
+    HAL_ADC_Start(&AdcHandle);
+    
+    // Wait for conversion to complete (100ms timeout)
+    if (HAL_ADC_PollForConversion(&AdcHandle, 100) == HAL_OK)
+    {
+      uint32_t adc_val = HAL_ADC_GetValue(&AdcHandle);
+      printf("PA4 ADC Value: %lu\r\n", adc_val);
+    }
+    else
+    {
+      printf("ADC Error\r\n");
+    }
+    
+    // Wait for 100ms
+    HAL_Delay(100); 
+  }
+}
+
+void APP_ErrorHandler(void)
+{
+  while (1);
+}
+
+#ifdef  USE_FULL_ASSERT
+void assert_failed(uint8_t *file, uint32_t line)
+{
+  while (1);
+}
+#endif /* USE_FULL_ASSERT */

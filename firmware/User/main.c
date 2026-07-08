@@ -3,12 +3,18 @@
 #include "ws2812.h"
 #include "SEGGER_RTT.h"
 
+#define VERSION_MAJOR 0
+#define VERSION_MINOR 1
+
 void APP_ErrorHandler(void);
-TIM_HandleTypeDef htim3;
 
+ADC_HandleTypeDef AdcHandle;
+DMA_HandleTypeDef HdmaCh1;
 
-// Basic system clock configuration function if we need to ensure 24MHz HSI.
-// The default startup code already sets SystemCoreClock to HSI (24MHz).
+// Global variable where the DMA will automatically drop the latest ADC reading
+volatile uint32_t latest_adc_val = 0;
+
+// Basic system clock configuration function
 static void APP_SystemClockConfig(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
@@ -23,7 +29,7 @@ static void APP_SystemClockConfig(void)
   RCC_OscInitStruct.LSIState = RCC_LSI_OFF;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
-    while (1);
+    APP_ErrorHandler();
   }
 
   // SysClk Config
@@ -33,71 +39,107 @@ static void APP_SystemClockConfig(void)
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
   {
-    while (1);
+    APP_ErrorHandler();
   }
 }
 
-// Initialize TIM3 to generate a PWM signal on PA6 and PA7
-static void APP_TIM3_PWM_Init(void)
-{
-  // Enable the clock for TIM3 peripheral
-  __HAL_RCC_TIM3_CLK_ENABLE();
-  
-  // Enable the clock for GPIOA port so we can use its pins
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  
-  // Configure PA6 (TIM3_CH1) and PA7 (TIM3_CH2) pins for Alternate Function Push-Pull mode
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
-  GPIO_InitStruct.Pin = GPIO_PIN_6 | GPIO_PIN_7;      // Select pins 6 and 7
-  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;             // Alternate function, push-pull output
-  GPIO_InitStruct.Pull = GPIO_NOPULL;                 // No pull-up or pull-down resistors
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;       // High speed switching
-  GPIO_InitStruct.Alternate = GPIO_AF1_TIM3;          // Assign these pins to TIM3 (Alternate Function 1)
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);             // Apply configuration to GPIOA
 
-  // Configure the TIM3 time base (frequency)
-  htim3.Instance = TIM3;                              // Select TIM3 hardware block
-  htim3.Init.Prescaler = 240 - 1;                     // Divide 24MHz system clock by 240 -> 100kHz timer clock
-  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;        // Timer counts up from 0 to Period
-  htim3.Init.Period = 100 - 1;                        // 100 counts at 100kHz = 1kHz PWM frequency
-  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;  // No extra clock division
-  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE; // Allow seamless period updates
-  if (HAL_TIM_PWM_Init(&htim3) != HAL_OK)             // Initialize the timer for PWM
-  {
-    APP_ErrorHandler();                               // Halt on error
-  }
-
-  // Configure the specific PWM channels
-  TIM_OC_InitTypeDef sConfigOC = {0};
-  sConfigOC.OCMode = TIM_OCMODE_PWM1;                 // PWM Mode 1: Output is active while counter < compare value
-  sConfigOC.Pulse = 0;                                // Initial duty cycle: 0% (0 / 100), effectively GND
-  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;         // Active state is logic HIGH (3.3V)
-  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;          // Disable fast mode
-  
-  // Apply configuration to Channel 1 (PA6)
-  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
-  {
-    APP_ErrorHandler();                               // Halt on error
-  }
-  
-  // Apply configuration to Channel 2 (PA7)
-  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
-  {
-    APP_ErrorHandler();                               // Halt on error
-  }
-  
-  // Start the PWM generation on both channels
-  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
-  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
-}
 
 // Override the weak _write function so printf outputs to SEGGER RTT
-int _write(int file, char *ptr, int len)
-{
+int _write(int file, char *ptr, int len) {
   (void)file;
   SEGGER_RTT_Write(0, ptr, len);
   return len;
 }
+
+// Initialize ADC to read analog voltage from PA4 (Channel 4) via DMA
+static void APP_ADC_Init(void)
+{
+  // Reset the ADC hardware state before configuration
+  __HAL_RCC_ADC_FORCE_RESET();
+  __HAL_RCC_ADC_RELEASE_RESET();
+  
+  // Enable clocks for ADC, GPIOA, SYSCFG (for DMA mapping), and DMA
+  __HAL_RCC_ADC_CLK_ENABLE();
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_SYSCFG_CLK_ENABLE();
+  __HAL_RCC_DMA_CLK_ENABLE();
+
+  // Configure PA4 specifically as an analog input pin
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+  GPIO_InitStruct.Pin = GPIO_PIN_4;                   // Select pin PA4
+  GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;            // Put it into analog mode
+  GPIO_InitStruct.Pull = GPIO_NOPULL;                 // No internal pull-ups or pull-downs
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  // --- DMA CONFIGURATION ---
+  // Map the ADC DMA request to DMA Channel 1
+  HAL_SYSCFG_DMA_Req(DMA_CHANNEL_MAP_ADC);
+
+  // Configure DMA Channel 1 to move data from Peripheral to Memory
+  HdmaCh1.Instance                 = DMA1_Channel1;
+  HdmaCh1.Init.Direction           = DMA_PERIPH_TO_MEMORY;
+  HdmaCh1.Init.PeriphInc           = DMA_PINC_DISABLE;         // Always read from the exact same ADC register
+  HdmaCh1.Init.MemInc              = DMA_MINC_DISABLE;         // Always write to the exact same variable (latest_adc_val)
+  HdmaCh1.Init.PeriphDataAlignment = DMA_PDATAALIGN_HALFWORD;  // ADC data register is 16-bit
+  HdmaCh1.Init.MemDataAlignment    = DMA_MDATAALIGN_WORD;      // Our variable is 32-bit
+  HdmaCh1.Init.Mode                = DMA_CIRCULAR;             // Keep looping endlessly (Continuous mode)
+  HdmaCh1.Init.Priority            = DMA_PRIORITY_HIGH;        // High priority for ADC data
+
+  // Initialize the DMA channel
+  HAL_DMA_Init(&HdmaCh1);
+  
+  // Link this DMA handle to our ADC handle
+  __HAL_LINKDMA(&AdcHandle, DMA_Handle, HdmaCh1);
+
+  // --- ADC CONFIGURATION ---
+  AdcHandle.Instance = ADC1;
+  
+  // Run an internal calibration sequence on the ADC for accurate readings
+  if (HAL_ADCEx_Calibration_Start(&AdcHandle) != HAL_OK)
+  {
+    APP_ErrorHandler();
+  }
+  
+  // Configure the general ADC operation
+  AdcHandle.Init.ClockPrescaler        = ADC_CLOCK_SYNC_PCLK_DIV1;
+  AdcHandle.Init.Resolution            = ADC_RESOLUTION_12B;
+  AdcHandle.Init.DataAlign             = ADC_DATAALIGN_RIGHT;
+  AdcHandle.Init.ScanConvMode          = ADC_SCAN_DIRECTION_FORWARD;
+  AdcHandle.Init.EOCSelection          = ADC_EOC_SINGLE_CONV;
+  AdcHandle.Init.LowPowerAutoWait      = ENABLE;                   // Enable auto-wait for stability during continuous conversions
+  AdcHandle.Init.ContinuousConvMode    = ENABLE;                   // **NEW**: Automatically start next reading!
+  AdcHandle.Init.DiscontinuousConvMode = DISABLE;
+  AdcHandle.Init.ExternalTrigConv      = ADC_SOFTWARE_START;
+  AdcHandle.Init.ExternalTrigConvEdge  = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  AdcHandle.Init.DMAContinuousRequests = ENABLE;                   // **NEW**: Tell ADC to constantly push data to DMA!
+  AdcHandle.Init.Overrun               = ADC_OVR_DATA_OVERWRITTEN;
+  AdcHandle.Init.SamplingTimeCommon    = ADC_SAMPLETIME_239CYCLES_5;
+  
+  // Apply the ADC configuration
+  if (HAL_ADC_Init(&AdcHandle) != HAL_OK)
+  {
+    APP_ErrorHandler();
+  }
+
+  // Link our configured ADC specifically to Channel 4 (which maps to PA4)
+  ADC_ChannelConfTypeDef sConfig = {0};
+  sConfig.Rank         = ADC_RANK_CHANNEL_NUMBER;
+  sConfig.Channel      = ADC_CHANNEL_4;
+  
+  // Apply channel configuration
+  if (HAL_ADC_ConfigChannel(&AdcHandle, &sConfig) != HAL_OK)
+  {
+    APP_ErrorHandler();
+  }
+
+  // START the ADC and link it to our target variable via DMA (buffer size 1)
+  if (HAL_ADC_Start_DMA(&AdcHandle, (uint32_t*)&latest_adc_val, 1) != HAL_OK)
+  {
+    APP_ErrorHandler();
+  }
+}
+
 
 int main(void)
 {
@@ -107,54 +149,34 @@ int main(void)
   // Configure the system clocks (running at 24MHz HSI)
   APP_SystemClockConfig();
   
-  // Initialize our custom TIM3 PWM configuration
-  APP_TIM3_PWM_Init();
-  
-  // Initialize the USART peripheral so we can use printf for debugging
-  // BSP_USART_Config(); // Commented out to use RTT instead of UART
-  
-  // Initialize SEGGER RTT (Optional but good practice)
+  // Initialize SEGGER RTT for seamless console output over SWD
   SEGGER_RTT_Init();
   
   // Print a startup message to the RTT terminal
-  printf("PY32F003 PWM Swap (via RTT)\r\nSystem Clock: %ld\r\n", SystemCoreClock);
+  printf("OpenFader v%i.%i\r\nSystem Clock: %ld\r\n", VERSION_MAJOR, VERSION_MINOR, SystemCoreClock);
 
-  // State variable to keep track of which pin is active
-  uint8_t swap_state = 0;
+  // Initialize the custom ADC configuration on PA4
+  APP_ADC_Init();
   
-  // Infinite loop - main program logic
   while (1)
   {
-    if (swap_state == 0)
-    {
-      printf("Up\r\n");
-      // State 0: PA6 is GND (0%), PA7 is active PWM (50%)
-      __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 0);  // Set PA6 duty cycle to 0 (GND)
-      __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 80); // Set PA7 duty cycle to 50 (50% of 100)
-      swap_state = 1;                                   // Next time, go to State 1
-    }
-    else
-    {
-      printf("Down\r\n");
-      // State 1: PA6 is active PWM (50%), PA7 is GND (0%)
-      __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 80); // Set PA6 duty cycle to 50 (50% of 100)
-      __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 0);  // Set PA7 duty cycle to 0 (GND)
-      swap_state = 0;                                   // Next time, go back to State 0
-    }
+    // That's it! We don't need to trigger the ADC or wait for it.
+    // The hardware is doing it all automatically in the background.
+    // We just print whatever the latest value is whenever we feel like it.
     
-    // Wait for 2 seconds (2000 milliseconds) before swapping again
-    HAL_Delay(2000); 
+    printf("PA4 ADC Value: %lu\r\n", latest_adc_val);
+    
+    // Sleep for 100 milliseconds (just to prevent spamming the console too fast)
+    HAL_Delay(100); 
   }
 }
 
-void APP_ErrorHandler(void)
-{
+void APP_ErrorHandler(void) {
   while (1);
 }
 
 #ifdef  USE_FULL_ASSERT
-void assert_failed(uint8_t *file, uint32_t line)
-{
+void assert_failed(uint8_t *file, uint32_t line) {
   while (1);
 }
 #endif /* USE_FULL_ASSERT */
