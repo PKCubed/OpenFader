@@ -1,0 +1,3 @@
+.pio/build/esp32s3usbotg/lib9e5/SdFat\ -\ Adafruit\ Fork/common/upcase.cpp.o: \
+ .pio/libdeps/esp32s3usbotg/SdFat\ -\ Adafruit\ Fork/src/common/upcase.cpp \
+ .pio/libdeps/esp32s3usbotg/SdFat\ -\ Adafruit\ Fork/src/common/upcase.h

@@ -147,6 +147,7 @@
 		(property "Value" "Conn_01x06_Pin"
 			(at 0 15.08 90)
 			(layer "F.Fab")
+			(hide yes)
 			(uuid "675aee40-ce34-4245-9a6d-e8d388c965d4")
 			(effects
 				(font
@@ -5425,6 +5426,7 @@
 		(property "Value" "Conn_01x05"
 			(at 5 -4.6 270)
 			(layer "B.Fab")
+			(hide yes)
 			(uuid "e9549859-b1bd-4687-913d-e8564ef9fec2")
 			(effects
 				(font
@@ -8468,6 +8470,19 @@
 		(at 149.9 182.2 90)
 		(layer "F.SilkS")
 		(uuid "5321fe5f-ecf3-4829-b524-b3c3bc5df4ae")
+		(effects
+			(font
+				(size 0.6 0.6)
+				(thickness 0.15)
+				(bold yes)
+			)
+			(justify left bottom)
+		)
+	)
+	(gr_text "https://github.com/PKCubed/OpenFader"
+		(at 150.1 162.5 90)
+		(layer "F.SilkS")
+		(uuid "2332187c-a921-404e-bbf4-162a117ca015")
 		(effects
 			(font
 				(size 0.6 0.6)
