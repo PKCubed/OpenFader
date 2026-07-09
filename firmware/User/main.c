@@ -2,6 +2,8 @@
 #include "py32f0xx_bsp_printf.h"
 #include "ws2812.h"
 #include "SEGGER_RTT.h"
+#include <math.h>
+#include <stdbool.h>
 
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 1
@@ -10,6 +12,7 @@ void APP_ErrorHandler(void);
 
 ADC_HandleTypeDef AdcHandle;
 DMA_HandleTypeDef HdmaCh1;
+TIM_HandleTypeDef htim3;
 
 // Global variable where the DMA will automatically drop the latest ADC reading
 volatile uint32_t latest_adc_val = 0;
@@ -140,6 +143,86 @@ static void APP_ADC_Init(void)
   }
 }
 
+// Initialize TIM3 to generate a PWM signal on PA6 and PA7 for the motor driver
+static void APP_TIM3_PWM_Init(void)
+{
+  // Enable the clock for TIM3 peripheral
+  __HAL_RCC_TIM3_CLK_ENABLE();
+  
+  // Enable the clock for GPIOA port
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+  
+  // Configure PA6 (TIM3_CH1) and PA7 (TIM3_CH2) pins for Alternate Function Push-Pull mode
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+  GPIO_InitStruct.Pin = GPIO_PIN_6 | GPIO_PIN_7;
+  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+  GPIO_InitStruct.Alternate = GPIO_AF1_TIM3;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  // Configure the TIM3 time base (frequency)
+  htim3.Instance = TIM3;
+  htim3.Init.Prescaler = 10 - 1;                      // 2.4MHz timer clock (24MHz / 10)
+  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim3.Init.Period = 100 - 1;                        // 24kHz PWM frequency (2.4MHz / 100)
+  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_PWM_Init(&htim3) != HAL_OK)
+  {
+    APP_ErrorHandler();
+  }
+
+  // Configure the specific PWM channels
+  TIM_OC_InitTypeDef sConfigOC = {0};
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;                                // Initial duty cycle: 0%
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  
+  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    APP_ErrorHandler();
+  }
+  
+  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
+  {
+    APP_ErrorHandler();
+  }
+  
+  // Start the PWM generation
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
+}
+
+// Helper function to easily control the motor speed and direction
+// speed ranges from -100 (full speed down) to +100 (full speed up)
+void APP_Motor_SetSpeed(int speed)
+{
+  // Clamp speed to safe limits
+  if (speed > 100) speed = 100;
+  if (speed < -100) speed = -100;
+  
+  if (speed > 0)
+  {
+    // Move UP (Increase ADC): PA7 gets PWM, PA6 is grounded
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 0);
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, speed);
+  }
+  else if (speed < 0)
+  {
+    // Move DOWN (Decrease ADC): PA6 gets PWM, PA7 is grounded (use absolute value of speed)
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, -speed);
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 0);
+  }
+  else
+  {
+    // Stop: Both grounded
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 0);
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 0);
+  }
+}
+
 
 int main(void)
 {
@@ -158,16 +241,180 @@ int main(void)
   // Initialize the custom ADC configuration on PA4
   APP_ADC_Init();
   
+  // Initialize the motor PWM on PA6 and PA7
+  APP_TIM3_PWM_Init();
+  
+  /*
+  // Good PID Controller Settings
+  float kp = 0.015f;
+  float ki = 0.005f;
+  float kd = 2.5f;
+  */
+
+  float kp = 0.06f;
+  float ki = 0.005f;
+  float kd = 0.5f;
+  
+  bool enable_deadzones = false; // Set to false to completely disable all deadzones for testing
+  int deadzone = 10;       // Stop motor when error falls below this
+  int deadzone_exit = 25;  // Don't wake up until error exceeds this (Hysteresis)
+  int d_deadzone = 25;     // Ignore D-term changes smaller than this to stop jitter
+  
+  int min_pwm = 55;        // Minimum PWM required to overcome physical friction
+  float max_i_term = 30.0f; // Maximum PWM power the I-term is allowed to add
+  
+  // Anti-Windup Settings
+  int i_active_zone = 200; // Only integrate when error is smaller than this (prevents windup on long travels)
+  
+  float previous_error = 0.0f;
+  float integral = 0.0f;
+  bool motor_enabled = true;
+  bool is_resting = false; // Hysteresis state tracker
+  
+  uint32_t last_pid_time = HAL_GetTick();
+  uint32_t last_print_time = HAL_GetTick();
+  
+  // Variables to hold state for printing
+  int current_setpoint = 2048;
+  float current_error = 0.0f;
+  int current_motor_speed = 0;
+
+  // ADC Filtering settings
+  float filtered_adc = 0.0f;
+  float alpha = 0.2f; // Smoothing factor: lower = smoother but more lag, 1.0 = no smoothing
+
   while (1)
   {
-    // That's it! We don't need to trigger the ADC or wait for it.
-    // The hardware is doing it all automatically in the background.
-    // We just print whatever the latest value is whenever we feel like it.
-    
-    printf("PA4 ADC Value: %lu\r\n", latest_adc_val);
-    
-    // Sleep for 100 milliseconds (just to prevent spamming the console too fast)
-    HAL_Delay(100); 
+    uint32_t current_time = HAL_GetTick();
+
+    // --- 1. Fast PID Loop (Runs every 1ms = 1000Hz) ---
+    if (current_time - last_pid_time >= 1)
+    {
+      last_pid_time = current_time;
+
+      // Generate a sine wave setpoint based on system time
+      float time_sec = current_time / 1000.0f;
+      
+      // Uncomment to test sine wave: 
+      current_setpoint = 2048 + (int)(1900.0f * sin(time_sec));
+
+
+      // Apply Exponential Moving Average (EMA) Filter to ADC readings
+      if (filtered_adc == 0.0f) filtered_adc = (float)latest_adc_val; // Initialize on first run
+      filtered_adc = (alpha * (float)latest_adc_val) + ((1.0f - alpha) * filtered_adc);
+
+      if (motor_enabled)
+      {
+        // 1. Calculate Error (Target - Current Position)
+        current_error = (float)current_setpoint - filtered_adc;
+        
+        // Hysteresis check to prevent chattering on the boundary
+        if (enable_deadzones)
+        {
+          if (!is_resting && current_error >= -deadzone && current_error <= deadzone)
+          {
+            is_resting = true; // Enter resting state
+          }
+          else if (is_resting && (current_error > deadzone_exit || current_error < -deadzone_exit))
+          {
+            is_resting = false; // Wake up from resting state
+          }
+        }
+        else
+        {
+          is_resting = false; // Never rest if deadzones are disabled
+        }
+        
+        if (is_resting)
+        {
+          // We are close enough to the target! Stop the motor and clear integral buildup
+          current_error = 0.0f;
+          integral = 0.0f; 
+          current_motor_speed = 0;
+          previous_error = 0.0f;
+          
+          APP_Motor_SetSpeed(0);
+        }
+        else
+        {
+          // 2. Calculate PID terms
+          
+          // Integration Window: Only integrate when we are relatively close to the target.
+          // If we are far away, the P-term has plenty of power, and integrating would just 
+          // build up a massive windup debt while traveling or if physically held.
+          if (current_error > -i_active_zone && current_error < i_active_zone)
+          {
+            integral += current_error;
+          }
+          else
+          {
+            integral = 0.0f; 
+          }
+          
+          // Anti-windup for the integral term
+          // Dynamically clamp the integral so it can't contribute more than max_i_term
+          float max_integral = ki > 0.0f ? (max_i_term / ki) : 0.0f;
+          if (integral > max_integral) integral = max_integral;
+          if (integral < -max_integral) integral = -max_integral;
+          
+          float derivative = current_error - previous_error;
+          
+          // Disable D term when we are within N counts from the setpoint
+          // to prevent the D-term from reacting to high-frequency noise near the target
+          if (enable_deadzones && current_error > -d_deadzone && current_error < d_deadzone)
+          {
+            derivative = 0.0f;
+          }
+          
+          // Calculate P, I, D components separately
+          float p_term = kp * current_error;
+          float i_term = ki * integral;
+          float d_term = kd * derivative;
+        
+          // Apply stiction compensation (min_pwm) exclusively to the P-term.
+          // This gives the D-term and I-term full linear authority to smoothly brake
+          // the motor all the way down to 0 (and even into negative for active braking)
+          // without triggering a violent +/- 60% jump in PWM.
+          if (p_term > 0)
+          {
+            p_term += min_pwm;
+          }
+          else if (p_term < 0)
+          {
+            p_term -= min_pwm;
+          }
+        
+          // 3. Compute the final motor speed (-100 to 100)
+          float output = p_term + i_term + d_term;
+          current_motor_speed = (int)output;
+        
+          // 4. Drive the Motor
+          APP_Motor_SetSpeed(current_motor_speed);
+          
+          previous_error = current_error;
+        }
+      }
+      else
+      {
+        // Motor is disabled - Let the user control it manually
+        APP_Motor_SetSpeed(0);
+      }
+    }
+
+    // --- 2. Slow Print Loop (Runs every 100ms = 10Hz) ---
+    if (current_time - last_print_time >= 100)
+    {
+      last_print_time = current_time;
+      
+      if (motor_enabled)
+      {
+        printf("SP: %d | ADC: %d | ERR: %d | OUT: %d\r\n", current_setpoint, (int)filtered_adc, (int)current_error, current_motor_speed);
+      }
+      else
+      {
+        printf("Motor Disabled | ADC: %d\r\n", (int)filtered_adc);
+      }
+    }
   }
 }
 
